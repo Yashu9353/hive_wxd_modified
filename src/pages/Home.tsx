@@ -10,7 +10,7 @@ const Home = () => {
           <Grid>
             <Column lg={8} md={8} sm={4}>
               <h1 style={{ fontSize: '3rem', fontWeight: 300, lineHeight: 1.2, marginBottom: '1rem', letterSpacing: '-0.01em' }}>
-                IBM GDC data modernization asset
+                Modernize your data, wherever it lives
               </h1>
               <p style={{ fontSize: '1.1875rem', maxWidth: '720px', lineHeight: 1.7, color: '#525252', marginBottom: '1.75rem' }}>
                 Migrate from Hive to IBM watsonx.data while reducing risk, saving time and simplifying compliance.
