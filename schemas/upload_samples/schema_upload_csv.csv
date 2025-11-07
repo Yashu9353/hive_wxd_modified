@@ -1,0 +1,5 @@
+schema_name,description
+default,Primary operational schema
+sales,Sales data mart
+analytics,Analytics sandbox
+finance,Finance warehouse

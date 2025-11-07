@@ -1,0 +1,8 @@
+{
+  \"schemas\": [
+    { \"name\": \"default\", \"owner\": \"platform\" },
+    { \"name\": \"sales\", \"owner\": \"sales_ops\" },
+    { \"name\": \"analytics\", \"owner\": \"data_science\" }
+  ],
+  \"version\": \"1.0\"
+}

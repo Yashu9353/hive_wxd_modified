@@ -1,0 +1,5 @@
+schema_name,description
+default,Default database schema
+sales,Sales and revenue data
+analytics,Analytics and reporting data
+

@@ -90,7 +90,7 @@ const DataMigrationNew = () => {
   const [runStatus, setRunStatus] = useState<'idle' | 'running' | 'success' | 'error'>('idle');
   const [srcUploadName, setSrcUploadName] = useState('');
   const [tgtUploadName, setTgtUploadName] = useState('');
-  const [operation, setOperation] = useState<'ddl' | 'validation' | ''>('');
+  const [operation, setOperation] = useState<'ddl' | 'validation' | 'migration' | ''>('');
   const [applyDcl, setApplyDcl] = useState(true);
   const [schemaUploadName, setSchemaUploadName] = useState('');
   const [continueWithoutSrc, setContinueWithoutSrc] = useState(false);
@@ -121,8 +121,11 @@ const DataMigrationNew = () => {
   const [conversionSubtype, setConversionSubtype] = useState<'table_schema' | 'stored_procedure' | 'dcl'>('table_schema');
   const [validationResults, setValidationResults] = useState<any[]>([]);
   const [validationRunning, setValidationRunning] = useState(false);
+  const [validationType, setValidationType] = useState<'rowcount' | 'schema' | 'checksum'>('rowcount');
   const [migrationProgress, setMigrationProgress] = useState<{step: string, status: 'pending' | 'running' | 'success' | 'error'}[]>([]);
   const [migrationLogs, setMigrationLogs] = useState<string[]>([]);
+
+  const conversionLabel = conversionSubtype === 'dcl' ? 'DCL' : 'DDL';
 
   return (
     <div style={{ padding: '0', minHeight: '100vh' }}>
@@ -163,7 +166,12 @@ const DataMigrationNew = () => {
               <Button kind="secondary" onClick={() => setSrcUploadName('source-connection.json')}>Upload connection</Button>
               {srcUploadName && <span style={{ alignSelf: 'center', color: '#525252' }}>Uploaded: {srcUploadName}</span>}
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginLeft: '1rem' }}>
-                <Checkbox id="continue-without-src" labelText="Continue without source connectivity" checked={continueWithoutSrc} onChange={(_, checked) => setContinueWithoutSrc(checked)} />
+                <Checkbox 
+                  id="continue-without-src" 
+                  labelText="Continue without source connectivity" 
+                  checked={continueWithoutSrc} 
+                  onChange={(_, { checked }) => setContinueWithoutSrc(checked ?? false)} 
+                />
               </div>
             </div>
             <div style={{ marginTop: '1rem', background: '#f4f4f4', padding: '1rem', borderRadius: 4 }}>
@@ -219,7 +227,12 @@ const DataMigrationNew = () => {
               <Button kind="secondary" onClick={() => setTgtUploadName('target-connection.json')}>Upload connection</Button>
               {tgtUploadName && <span style={{ alignSelf: 'center', color: '#525252' }}>Uploaded: {tgtUploadName}</span>}
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginLeft: '1rem' }}>
-                <Checkbox id="continue-without-tgt" labelText="Continue without target connectivity" checked={continueWithoutTgt} onChange={(_, checked) => setContinueWithoutTgt(checked)} />
+                <Checkbox 
+                  id="continue-without-tgt" 
+                  labelText="Continue without target connectivity" 
+                  checked={continueWithoutTgt} 
+                  onChange={(_, { checked }) => setContinueWithoutTgt(checked ?? false)} 
+                />
               </div>
             </div>
             <div style={{ marginTop: '1rem', background: '#f4f4f4', padding: '1rem', borderRadius: 4 }}>
@@ -260,64 +273,204 @@ const DataMigrationNew = () => {
               <Button kind="ghost" onClick={() => setStep(1)}>Back</Button>
             </div>
             <h3 style={{ fontSize: '1.25rem', marginBottom: '1rem' }}>Select schemas</h3>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-              <div>
-                <label style={{ display: 'block', fontSize: '0.75rem', marginBottom: '0.5rem', fontWeight: 600 }}>Select source schemas (multiple)</label>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', padding: '0.75rem', border: '1px solid #e0e0e0', borderRadius: '4px', backgroundColor: '#f4f4f4' }}>
-                  {['default', 'sales', 'analytics'].map((schema) => (
-                    <Checkbox
-                      key={schema}
-                      id={`schema-${schema}`}
-                      labelText={schema}
-                      checked={selectedSchemas.includes(schema)}
-                      onChange={(_, checked) => {
-                        if (checked) {
-                          setSelectedSchemas([...selectedSchemas, schema]);
-                        } else {
-                          setSelectedSchemas(selectedSchemas.filter((s) => s !== schema));
-                        }
-                      }}
-                    />
-                  ))}
-                </div>
+            
+            {/* Show connection status */}
+            {srcConnected ? (
+              <div style={{ marginBottom: '1rem', padding: '0.75rem', backgroundColor: '#e8f5e9', borderRadius: '4px', color: '#2e7d32' }}>
+                <strong>✓ Source connected:</strong> You can load schemas from the connected Hive source.
               </div>
-              <div>
-                <label style={{ display: 'block', fontSize: '0.75rem', marginBottom: '0.25rem' }}>Or upload schema list</label>
-                <div style={{ display: 'flex', gap: '0.75rem' }}>
-                  <input id="schema-file" type="file" accept=".txt,.csv,.json" style={{ display: 'none' }} onChange={(e) => {
-                    const file = (e.target as HTMLInputElement).files?.[0];
-                    if (file) setSchemaUploadName(file.name);
-                  }} />
-                  <Button kind="secondary" onClick={() => document.getElementById('schema-file')?.click()}>Upload schemas</Button>
-                  <span style={{ alignSelf: 'center', color: '#525252' }}>{schemaUploadName ? `Uploaded: ${schemaUploadName}` : 'No file selected'}</span>
-                </div>
+            ) : continueWithoutSrc ? (
+              <div style={{ marginBottom: '1rem', padding: '0.75rem', backgroundColor: '#fff3cd', borderRadius: '4px', color: '#856404' }}>
+                <strong>⚠ No source connection:</strong> Using default schemas or upload your schema list.
               </div>
-            </div>
-            <div style={{ marginTop: '1rem' }}>
-              <Button 
-                kind="secondary" 
-                onClick={async () => {
-                  if (selectedSchemas.length === 0) {
-                    alert('Please select at least one schema first');
-                    return;
-                  }
-                  setLoadingSchemas(true);
-                  // Simulate loading schemas
-                  await new Promise(resolve => setTimeout(resolve, 2000));
-                  const loaded = selectedSchemas.map(schema => ({
-                    schema,
-                    tables: DEMO_SCHEMAS[schema as keyof typeof DEMO_SCHEMAS]?.tables || []
-                  }));
-                  setLoadedSchemas(loaded);
-                  setLoadingSchemas(false);
-                }}
-                disabled={selectedSchemas.length === 0 || loadingSchemas}
-              >
-                {loadingSchemas ? 'Loading...' : 'Load schemas from source'}
-              </Button>
-            </div>
+            ) : null}
 
-            {loadingSchemas && (
+            {srcConnected ? (
+              // When connected: Show schema loading from source
+              <>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.75rem', marginBottom: '0.5rem', fontWeight: 600 }}>Select source schemas (multiple)</label>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', padding: '0.75rem', border: '1px solid #e0e0e0', borderRadius: '4px', backgroundColor: '#f4f4f4' }}>
+                      {['default', 'sales', 'analytics'].map((schema) => (
+                        <Checkbox
+                          key={schema}
+                          id={`schema-${schema}`}
+                          labelText={schema}
+                          checked={selectedSchemas.includes(schema)}
+                          onChange={(_, { checked }) => {
+                            setSelectedSchemas(prev => {
+                              if (checked) {
+                                return prev.includes(schema) ? prev : [...prev, schema];
+                              } else {
+                                return prev.filter((s) => s !== schema);
+                              }
+                            });
+                          }}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.75rem', marginBottom: '0.25rem' }}>Or upload schema list</label>
+                    <div style={{ display: 'flex', gap: '0.75rem' }}>
+                      <input id="schema-file" type="file" accept=".txt,.csv,.json" style={{ display: 'none' }} onChange={(e) => {
+                        const file = (e.target as HTMLInputElement).files?.[0];
+                        if (file) {
+                          setSchemaUploadName(file.name);
+                          // Parse uploaded file and set schemas
+                          file.text().then(text => {
+                            try {
+                              let schemas: string[] = [];
+                              // Try JSON first
+                              if (file.name.endsWith('.json')) {
+                                const jsonData = JSON.parse(text);
+                                if (Array.isArray(jsonData)) {
+                                  schemas = jsonData.map(item => typeof item === 'string' ? item : item.schema || item.name).filter(s => s);
+                                } else if (jsonData.schemas && Array.isArray(jsonData.schemas)) {
+                                  schemas = jsonData.schemas;
+                                }
+                              } else {
+                                // Parse as text/CSV
+                                const lines = text.split('\n').filter(line => line.trim());
+                                schemas = lines.map(line => line.trim().split(',')[0].trim()).filter(s => s);
+                              }
+                              if (schemas.length > 0) {
+                                setSelectedSchemas(schemas);
+                              }
+                            } catch (e) {
+                              console.error('Error parsing schema file:', e);
+                              alert('Error parsing schema file. Please ensure it is a valid text, CSV, or JSON file.');
+                            }
+                          });
+                        }
+                      }} />
+                      <Button kind="secondary" onClick={() => document.getElementById('schema-file')?.click()}>Upload schemas</Button>
+                      <span style={{ alignSelf: 'center', color: '#525252' }}>{schemaUploadName ? `Uploaded: ${schemaUploadName}` : 'No file selected'}</span>
+                    </div>
+                  </div>
+                </div>
+                <div style={{ marginTop: '1rem' }}>
+                  <Button 
+                    kind="secondary" 
+                    onClick={async () => {
+                      if (selectedSchemas.length === 0) {
+                        alert('Please select at least one schema first');
+                        return;
+                      }
+                      setLoadingSchemas(true);
+                      // Simulate loading schemas from source
+                      await new Promise(resolve => setTimeout(resolve, 2000));
+                      const loaded = selectedSchemas.map(schema => ({
+                        schema,
+                        tables: DEMO_SCHEMAS[schema as keyof typeof DEMO_SCHEMAS]?.tables || []
+                      }));
+                      setLoadedSchemas(loaded);
+                      setLoadingSchemas(false);
+                    }}
+                    disabled={selectedSchemas.length === 0 || loadingSchemas}
+                  >
+                    {loadingSchemas ? 'Loading...' : 'Load schemas from source'}
+                  </Button>
+                </div>
+              </>
+            ) : (
+              // When NOT connected: Show only default schema or upload option
+              <>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.75rem', marginBottom: '0.5rem', fontWeight: 600 }}>Select default schema</label>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', padding: '0.75rem', border: '1px solid #e0e0e0', borderRadius: '4px', backgroundColor: '#f4f4f4' }}>
+                      <Checkbox
+                        id="schema-default"
+                        labelText="default"
+                        checked={selectedSchemas.includes('default')}
+                        onChange={(_, { checked }) => {
+                          setSelectedSchemas(prev => {
+                            if (checked) {
+                              return prev.includes('default') ? prev : ['default'];
+                            } else {
+                              return prev.filter((s) => s !== 'default');
+                            }
+                          });
+                        }}
+                      />
+                    </div>
+                    <p style={{ fontSize: '0.75rem', color: '#8d8d8d', marginTop: '0.5rem' }}>
+                      Use the default schema to proceed without source connection.
+                    </p>
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.75rem', marginBottom: '0.25rem', fontWeight: 600 }}>Or upload schema list</label>
+                    <div style={{ display: 'flex', gap: '0.75rem', flexDirection: 'column' }}>
+                      <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
+                        <input id="schema-file" type="file" accept=".txt,.csv,.json" style={{ display: 'none' }} onChange={(e) => {
+                          const file = (e.target as HTMLInputElement).files?.[0];
+                          if (file) {
+                            setSchemaUploadName(file.name);
+                            // Parse uploaded file and set schemas
+                            file.text().then(text => {
+                              try {
+                                let schemas: string[] = [];
+                                // Try JSON first
+                                if (file.name.endsWith('.json')) {
+                                  const jsonData = JSON.parse(text);
+                                  if (Array.isArray(jsonData)) {
+                                    schemas = jsonData.map(item => typeof item === 'string' ? item : item.schema || item.name).filter(s => s);
+                                  } else if (jsonData.schemas && Array.isArray(jsonData.schemas)) {
+                                    schemas = jsonData.schemas;
+                                  }
+                                } else {
+                                  // Parse as text/CSV
+                                  const lines = text.split('\n').filter(line => line.trim());
+                                  schemas = lines.map(line => line.trim().split(',')[0].trim()).filter(s => s);
+                                }
+                                if (schemas.length > 0) {
+                                  setSelectedSchemas(schemas);
+                                  // Auto-load schemas from uploaded file
+                                  const loaded = schemas.map(schema => ({
+                                    schema,
+                                    tables: DEMO_SCHEMAS[schema as keyof typeof DEMO_SCHEMAS]?.tables || []
+                                  }));
+                                  setLoadedSchemas(loaded);
+                                }
+                              } catch (e) {
+                                console.error('Error parsing schema file:', e);
+                                alert('Error parsing schema file. Please ensure it is a valid text, CSV, or JSON file.');
+                              }
+                            });
+                          }
+                        }} />
+                        <Button kind="secondary" onClick={() => document.getElementById('schema-file')?.click()}>Upload schemas</Button>
+                        <span style={{ alignSelf: 'center', color: '#525252' }}>{schemaUploadName ? `Uploaded: ${schemaUploadName}` : 'No file selected'}</span>
+                      </div>
+                      <p style={{ fontSize: '0.75rem', color: '#8d8d8d' }}>
+                        Upload a text file with schema names (one per line) or CSV/JSON format.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+                {selectedSchemas.length > 0 && !loadedSchemas.length && (
+                  <div style={{ marginTop: '1rem' }}>
+                    <Button 
+                      kind="secondary" 
+                      onClick={() => {
+                        // Load default schema
+                        const loaded = selectedSchemas.map(schema => ({
+                          schema,
+                          tables: DEMO_SCHEMAS[schema as keyof typeof DEMO_SCHEMAS]?.tables || []
+                        }));
+                        setLoadedSchemas(loaded);
+                      }}
+                    >
+                      Use default schema
+                    </Button>
+                  </div>
+                )}
+              </>
+            )}
+
+            {loadingSchemas && srcConnected && (
               <div style={{ marginTop: '1rem' }}>
                 <InlineLoading description="Loading schema metadata from Hive..." />
               </div>
@@ -325,7 +478,9 @@ const DataMigrationNew = () => {
 
             {loadedSchemas.length > 0 && (
               <div style={{ marginTop: '1.5rem', border: '1px solid #e0e0e0', borderRadius: '4px', padding: '1rem', backgroundColor: '#f4f4f4' }}>
-                <h4 style={{ marginBottom: '0.75rem', fontSize: '1rem', fontWeight: 600 }}>Loaded Schema Information</h4>
+                <h4 style={{ marginBottom: '0.75rem', fontSize: '1rem', fontWeight: 600 }}>
+                  {srcConnected ? 'Loaded Schema Information' : 'Schema Information'}
+                </h4>
                 {loadedSchemas.map((schemaData) => (
                   <div key={schemaData.schema} style={{ marginBottom: '1rem' }}>
                     <div style={{ fontWeight: 600, marginBottom: '0.5rem', color: '#0f62fe' }}>
@@ -354,7 +509,7 @@ const DataMigrationNew = () => {
                   </div>
                 ))}
                 <div style={{ marginTop: '1rem', padding: '0.75rem', backgroundColor: '#e8f5e9', borderRadius: '4px', color: '#2e7d32' }}>
-                  <strong>✓ Schema metadata loaded successfully!</strong> Ready for DDL conversion and migration.
+                  <strong>✓ Schema metadata {srcConnected ? 'loaded successfully' : 'ready'}!</strong> Ready for DDL conversion and migration.
                 </div>
               </div>
             )}
@@ -395,6 +550,7 @@ const DataMigrationNew = () => {
                   <SelectItem value="" text="Select" />
                   <SelectItem value="ddl" text="DDL conversion" />
                   <SelectItem value="validation" text="Data validation" />
+                  <SelectItem value="migration" text="Data migration" />
                 </Select>
               </div>
               {operation === 'ddl' && (
@@ -411,7 +567,7 @@ const DataMigrationNew = () => {
 
             {operation === 'ddl' && (
               <div style={{ border: '1px solid #e0e0e0', padding: '1rem', borderRadius: 4, marginBottom: '1rem' }}>
-                <h4 style={{ marginBottom: '0.75rem' }}>DDL conversion - {conversionSubtype.replace('_', ' ').toUpperCase()}</h4>
+                <h4 style={{ marginBottom: '0.75rem' }}>DDL conversion - {conversionLabel.replace('_', ' ').toUpperCase()}</h4>
                 
                 {conversionSubtype === 'table_schema' && (
                   <>
@@ -443,7 +599,7 @@ const DataMigrationNew = () => {
                         }
                       }} />
                       <Button kind="secondary" onClick={() => document.getElementById('ddl-file')?.click()}>Upload DDL file</Button>
-                      <span style={{ color: '#525252' }}>{ddlFileName ? `Ready: ${ddlFileName}` : 'No file selected - Click "Load demo DDL" to try it'}</span>
+                      <span style={{ color: '#525252' }}>{ddlFileName ? `Ready: ${ddlFileName}` : `No file selected - Click "Load demo ${conversionLabel}" to try it`}</span>
                     </div>
                   </>
                 )}
@@ -452,25 +608,44 @@ const DataMigrationNew = () => {
                   <div style={{ marginBottom: '1rem', padding: '0.75rem', backgroundColor: '#f4f4f4', borderRadius: '4px' }}>
                     <p style={{ margin: 0, color: '#525252', fontSize: '0.875rem' }}>
                       DCL conversion automatically converts Hive GRANT/REVOKE statements to watsonx.data/Iceberg format.
-                      Click "Convert DDL" to see the conversion.
+                      Click "Convert {conversionLabel}" to see the conversion.
                     </p>
-                    <Button 
-                      kind="tertiary" 
-                      onClick={() => {
-                        setBeforeDdl(DEMO_DCL_HIVE);
-                        setReviewText(DEMO_DCL_ICEBERG);
-                        setDdlFileName('dcl_permissions.sql');
-                      }}
-                      style={{ marginTop: '0.5rem' }}
-                    >
-                      Load demo DCL
-                    </Button>
+                    <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', marginTop: '0.5rem' }}>
+                      <Button 
+                        kind="tertiary" 
+                        onClick={() => {
+                          setBeforeDdl(DEMO_DCL_HIVE);
+                          setReviewText(DEMO_DCL_ICEBERG);
+                          setDdlFileName('dcl_permissions.sql');
+                          setDdlConverted(false);
+                          setDdlReviewed(false);
+                        }}
+                      >
+                        Load demo DCL
+                      </Button>
+                      <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
+                        <input id="dcl-file" type="file" accept=".sql,.ddl,.txt" style={{ display: 'none' }} onChange={(e) => {
+                          const file = (e.target as HTMLInputElement).files?.[0];
+                          if (file) {
+                            setDdlFileName(file.name);
+                            file.text().then(text => {
+                              setBeforeDdl(text);
+                              setReviewText('');
+                              setDdlConverted(false);
+                              setDdlReviewed(false);
+                            });
+                          }
+                        }} />
+                        <Button kind="secondary" onClick={() => document.getElementById('dcl-file')?.click()}>Upload DCL file</Button>
+                        <span style={{ color: '#525252' }}>{ddlFileName ? `Ready: ${ddlFileName}` : 'No file selected - Load demo or upload your DCL file'}</span>
+                      </div>
+                    </div>
                   </div>
                 )}
 
                 {beforeDdl && (
                   <div style={{ marginBottom: '1rem', border: '1px solid #e0e0e0', borderRadius: '4px', padding: '0.75rem', backgroundColor: '#fff3cd' }}>
-                    <div style={{ fontWeight: 600, marginBottom: '0.5rem', fontSize: '0.875rem' }}>Original Hive DDL:</div>
+                    <div style={{ fontWeight: 600, marginBottom: '0.5rem', fontSize: '0.875rem' }}>Original Hive {conversionLabel}:</div>
                     <pre style={{ margin: 0, fontSize: '0.8rem', whiteSpace: 'pre-wrap', maxHeight: '150px', overflow: 'auto' }}>{beforeDdl}</pre>
                   </div>
                 )}
@@ -494,7 +669,7 @@ const DataMigrationNew = () => {
                     }}
                     disabled={ddlConverting}
                   >
-                    {ddlConverting ? 'Converting...' : 'Convert DDL'}
+                    {ddlConverting ? 'Converting...' : `Convert ${conversionLabel}`}
                   </Button>
                   <Button 
                     kind="secondary" 
@@ -506,7 +681,7 @@ const DataMigrationNew = () => {
                     }}
                     disabled={!ddlConverted}
                   >
-                    Review converted DDL
+                    {`Review converted ${conversionLabel}`}
                   </Button>
                   <Button 
                     kind="secondary" 
@@ -522,15 +697,15 @@ const DataMigrationNew = () => {
                     }}
                     disabled={!ddlConverted}
                   >
-                    Download
+                    {`Download ${conversionLabel}`}
                   </Button>
                   <Button 
                     kind="tertiary" 
                     disabled={!(ddlConverted && ddlReviewed)} 
                     onClick={async () => {
-                      alert('Deploying converted DDL to watsonx.data...');
+                      alert(`Deploying converted ${conversionLabel} to watsonx.data...`);
                       await new Promise(resolve => setTimeout(resolve, 1000));
-                      alert('✓ DDL deployed successfully to watsonx.data catalog!');
+                      alert(`✓ ${conversionLabel} deployed successfully to watsonx.data catalog!`);
                     }}
                   >
                     Deploy to watsonx.data
@@ -538,12 +713,12 @@ const DataMigrationNew = () => {
                 </div>
                 {ddlConverting && (
                   <div style={{ marginTop: '0.5rem' }}>
-                    <InlineLoading description="Converting DDL from Hive to Iceberg format..." />
+                    <InlineLoading description={`Converting ${conversionLabel} from Hive to Iceberg format...`} />
                   </div>
                 )}
                 {ddlConverted && !ddlReviewed && (
                   <div style={{ marginTop: '0.75rem', padding: '0.75rem', backgroundColor: '#e8f5e9', borderRadius: '4px', color: '#2e7d32' }}>
-                    <strong>✓ DDL converted successfully!</strong> Click "Review converted DDL" to see the results.
+                    <strong>✓ {conversionLabel} converted successfully!</strong> Click "Review converted {conversionLabel}" to see the results.
                   </div>
                 )}
                 <p style={{ color: '#8d8d8d', fontSize: '0.875rem', marginTop: '0.5rem' }}>
@@ -554,17 +729,29 @@ const DataMigrationNew = () => {
               </div>
             )}
 
+            {operation === 'migration' && (
+              <div style={{ border: '1px solid #e0e0e0', padding: '2rem', borderRadius: 4, marginBottom: '1rem', minHeight: '200px', backgroundColor: '#f4f4f4' }}>
+                {/* Intentionally left empty for future content */}
+              </div>
+            )}
+
             {/* DCL handled as a subtype inside DDL now; no separate panel here */}
 
             {operation === 'validation' && (
               <div style={{ border: '1px solid #e0e0e0', padding: '1rem', borderRadius: 4, marginBottom: '1rem' }}>
                 <h4 style={{ marginBottom: '0.75rem' }}>Data validation</h4>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.75rem', marginBottom: '1rem' }}>
-                  <Select id="val-type" labelText="Validation type" defaultValue="rowcount" onChange={(e) => {
-                    const valType = (e.target as HTMLSelectElement).value;
-                    // Reset results when type changes
-                    setValidationResults([]);
-                  }}>
+                  <Select 
+                    id="val-type" 
+                    labelText="Validation type" 
+                    value={validationType}
+                    onChange={(e) => {
+                      const valType = (e.target as HTMLSelectElement).value as 'rowcount' | 'schema' | 'checksum';
+                      setValidationType(valType);
+                      // Reset results when type changes
+                      setValidationResults([]);
+                    }}
+                  >
                     <SelectItem value="rowcount" text="Row count" />
                     <SelectItem value="schema" text="Schema diff" />
                     <SelectItem value="checksum" text="Checksum" />
@@ -576,26 +763,57 @@ const DataMigrationNew = () => {
                   <Button 
                     kind="primary"
                     onClick={async () => {
-                      if (selectedSchemas.length === 0 || loadedSchemas.length === 0) {
-                        alert('Please load schemas first in step 2');
+                      if (selectedSchemas.length === 0) {
+                        alert('Please select schemas first in step 2');
                         return;
                       }
+                      
+                      // Auto-load schemas if not loaded
+                      let schemasToValidate = loadedSchemas;
+                      if (schemasToValidate.length === 0) {
+                        schemasToValidate = selectedSchemas.map(schema => ({
+                          schema,
+                          tables: DEMO_SCHEMAS[schema as keyof typeof DEMO_SCHEMAS]?.tables || []
+                        }));
+                        setLoadedSchemas(schemasToValidate);
+                      }
+                      
                       setValidationRunning(true);
                       await new Promise(resolve => setTimeout(resolve, 3000));
                       
-                      // Generate demo validation results
+                      // Generate demo validation results based on type
                       const results: any[] = [];
-                      loadedSchemas.forEach(schemaData => {
+                      schemasToValidate.forEach(schemaData => {
                         schemaData.tables.forEach(table => {
-                          results.push({
-                            schema: schemaData.schema,
-                            table: table.name,
-                            sourceRows: table.rows,
-                            targetRows: table.rows, // Match for demo
-                            status: 'match',
-                            schemaMatch: true,
-                            checksum: 'a3f5d8e2c1b9'
-                          });
+                          if (validationType === 'rowcount') {
+                            results.push({
+                              schema: schemaData.schema,
+                              table: table.name,
+                              sourceRows: table.rows,
+                              targetRows: table.rows, // Match for demo
+                              status: 'match',
+                              validationType: 'rowcount'
+                            });
+                          } else if (validationType === 'schema') {
+                            results.push({
+                              schema: schemaData.schema,
+                              table: table.name,
+                              sourceColumns: table.columns,
+                              targetColumns: table.columns,
+                              columnDifferences: [],
+                              status: 'match',
+                              validationType: 'schema'
+                            });
+                          } else if (validationType === 'checksum') {
+                            results.push({
+                              schema: schemaData.schema,
+                              table: table.name,
+                              sourceChecksum: 'a3f5d8e2c1b9f4',
+                              targetChecksum: 'a3f5d8e2c1b9f4',
+                              status: 'match',
+                              validationType: 'checksum'
+                            });
+                          }
                         });
                       });
                       setValidationResults(results);
@@ -605,49 +823,50 @@ const DataMigrationNew = () => {
                   >
                     {validationRunning ? 'Running validation...' : 'Run validation'}
                   </Button>
-                  <Button 
-                    kind="secondary" 
-                    onClick={() => {
-                      const plan = {
-                        type: 'rowcount',
-                        schemas: selectedSchemas,
-                        samplePercent: 100
-                      };
-                      const blob = new Blob([JSON.stringify(plan, null, 2)], { type: 'application/json' });
-                      const url = URL.createObjectURL(blob);
-                      const a = document.createElement('a');
-                      a.href = url;
-                      a.download = 'validation_plan.json';
-                      a.click();
-                      URL.revokeObjectURL(url);
-                    }}
-                  >
-                    Download plan
-                  </Button>
                 </div>
 
                 {validationRunning && (
                   <div style={{ marginTop: '1rem' }}>
                     <InlineLoading description="Validating data between Hive and watsonx.data..." />
                     <p style={{ fontSize: '0.875rem', color: '#525252', marginTop: '0.5rem' }}>
-                      Comparing row counts, schemas, and checksums...
+                      {validationType === 'rowcount' && 'Comparing row counts between source and target...'}
+                      {validationType === 'schema' && 'Comparing schema structures and column definitions...'}
+                      {validationType === 'checksum' && 'Computing and comparing data checksums...'}
                     </p>
                   </div>
                 )}
 
                 {validationResults.length > 0 && (
                   <div style={{ marginTop: '1.5rem', border: '1px solid #e0e0e0', borderRadius: '4px', padding: '1rem', backgroundColor: '#f4f4f4' }}>
-                    <h5 style={{ marginBottom: '0.75rem', fontSize: '1rem', fontWeight: 600 }}>Validation Results</h5>
+                    <h5 style={{ marginBottom: '0.75rem', fontSize: '1rem', fontWeight: 600 }}>
+                      Validation Results - {validationResults[0]?.validationType === 'rowcount' ? 'Row Count' : validationResults[0]?.validationType === 'schema' ? 'Schema Diff' : 'Checksum'}
+                    </h5>
                     <TableContainer>
                       <Table>
                         <TableHead>
                           <TableRow>
                             <TableHeader>Schema</TableHeader>
                             <TableHeader>Table</TableHeader>
-                            <TableHeader>Source Rows</TableHeader>
-                            <TableHeader>Target Rows</TableHeader>
+                            {validationResults[0]?.validationType === 'rowcount' && (
+                              <>
+                                <TableHeader>Source Rows</TableHeader>
+                                <TableHeader>Target Rows</TableHeader>
+                              </>
+                            )}
+                            {validationResults[0]?.validationType === 'schema' && (
+                              <>
+                                <TableHeader>Source Columns</TableHeader>
+                                <TableHeader>Target Columns</TableHeader>
+                                <TableHeader>Differences</TableHeader>
+                              </>
+                            )}
+                            {validationResults[0]?.validationType === 'checksum' && (
+                              <>
+                                <TableHeader>Source Checksum</TableHeader>
+                                <TableHeader>Target Checksum</TableHeader>
+                              </>
+                            )}
                             <TableHeader>Status</TableHeader>
-                            <TableHeader>Schema Match</TableHeader>
                           </TableRow>
                         </TableHead>
                         <TableBody>
@@ -655,20 +874,30 @@ const DataMigrationNew = () => {
                             <TableRow key={idx}>
                               <TableCell>{result.schema}</TableCell>
                               <TableCell>{result.table}</TableCell>
-                              <TableCell>{result.sourceRows.toLocaleString()}</TableCell>
-                              <TableCell>{result.targetRows.toLocaleString()}</TableCell>
+                              {result.validationType === 'rowcount' && (
+                                <>
+                                  <TableCell>{result.sourceRows?.toLocaleString()}</TableCell>
+                                  <TableCell>{result.targetRows?.toLocaleString()}</TableCell>
+                                </>
+                              )}
+                              {result.validationType === 'schema' && (
+                                <>
+                                  <TableCell>{result.sourceColumns}</TableCell>
+                                  <TableCell>{result.targetColumns}</TableCell>
+                                  <TableCell>{result.columnDifferences?.length === 0 ? 'None' : result.columnDifferences?.join(', ')}</TableCell>
+                                </>
+                              )}
+                              {result.validationType === 'checksum' && (
+                                <>
+                                  <TableCell style={{ fontFamily: 'monospace', fontSize: '0.875rem' }}>{result.sourceChecksum}</TableCell>
+                                  <TableCell style={{ fontFamily: 'monospace', fontSize: '0.875rem' }}>{result.targetChecksum}</TableCell>
+                                </>
+                              )}
                               <TableCell>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', color: result.status === 'match' ? '#24a148' : '#da1e28' }}>
                                   {result.status === 'match' ? <CheckmarkFilled size={16} /> : <ErrorFilled size={16} />}
                                   {result.status === 'match' ? 'Match' : 'Mismatch'}
                                 </div>
-                              </TableCell>
-                              <TableCell>
-                                {result.schemaMatch ? (
-                                  <span style={{ color: '#24a148' }}>✓ Match</span>
-                                ) : (
-                                  <span style={{ color: '#da1e28' }}>✗ Diff</span>
-                                )}
                               </TableCell>
                             </TableRow>
                           ))}
@@ -683,9 +912,10 @@ const DataMigrationNew = () => {
                       <Button 
                         kind="secondary"
                         onClick={() => {
+                          const valType = validationResults[0]?.validationType || 'rowcount';
                           const report = {
                             timestamp: new Date().toISOString(),
-                            validationType: 'rowcount',
+                            validationType: valType,
                             results: validationResults,
                             summary: {
                               total: validationResults.length,
@@ -697,12 +927,12 @@ const DataMigrationNew = () => {
                           const url = URL.createObjectURL(blob);
                           const a = document.createElement('a');
                           a.href = url;
-                          a.download = 'validation_report.json';
+                          a.download = `validation_report_${valType}.json`;
                           a.click();
                           URL.revokeObjectURL(url);
                         }}
                       >
-                        Download validation report
+                        Download
                       </Button>
                     </div>
                   </div>
@@ -916,13 +1146,13 @@ const DataMigrationNew = () => {
           <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '1rem' }}>
             <div style={{ background: '#fff', width: '100%', maxWidth: '1400px', maxHeight: '90vh', padding: '1.5rem', borderRadius: 6, boxShadow: '0 4px 16px rgba(0,0,0,0.2)', display: 'flex', flexDirection: 'column', overflow: 'auto' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-                <h4 style={{ margin: 0 }}>Review DDL Conversion</h4>
+                <h4 style={{ margin: 0 }}>Review {conversionLabel} Conversion</h4>
                 <Button kind="ghost" onClick={() => setShowReview(false)}>Close</Button>
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: beforeDdl ? '1fr 1fr' : '1fr', gap: '1rem', flex: 1, minHeight: 0 }}>
                 {beforeDdl && (
                   <div style={{ display: 'flex', flexDirection: 'column' }}>
-                    <div style={{ fontWeight: 600, marginBottom: '0.5rem', color: '#da1e28' }}>Original Hive DDL</div>
+                    <div style={{ fontWeight: 600, marginBottom: '0.5rem', color: '#da1e28' }}>Original Hive {conversionLabel}</div>
                     <textarea 
                       value={beforeDdl} 
                       readOnly
@@ -942,7 +1172,7 @@ const DataMigrationNew = () => {
                   </div>
                 )}
                 <div style={{ display: 'flex', flexDirection: 'column' }}>
-                  <div style={{ fontWeight: 600, marginBottom: '0.5rem', color: '#24a148' }}>Converted Iceberg DDL</div>
+                  <div style={{ fontWeight: 600, marginBottom: '0.5rem', color: '#24a148' }}>Converted Iceberg {conversionLabel}</div>
                   <textarea 
                     value={reviewText || (conversionSubtype === 'dcl' ? DEMO_DCL_ICEBERG : DEMO_CONVERTED_DDL)} 
                     onChange={(e) => setReviewText((e.target as HTMLTextAreaElement).value)} 
@@ -976,7 +1206,7 @@ const DataMigrationNew = () => {
                       URL.revokeObjectURL(url); 
                     }}
                   >
-                    Download converted DDL
+                    Download converted {conversionLabel}
                   </Button>
                   <Button 
                     kind="primary" 
